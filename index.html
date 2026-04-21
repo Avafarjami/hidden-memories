@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AR Ground Square</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; font-family: sans-serif; }
+    #overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: flex-end;
+      padding-bottom: 40px; pointer-events: none; z-index: 10;
+    }
+    #start-btn {
+      padding: 14px 32px; font-size: 16px; border-radius: 50px;
+      background: rgba(255,255,255,0.9); border: none; cursor: pointer;
+      pointer-events: all; font-weight: 600; color: #111;
+    }
+    #status {
+      color: white; font-size: 14px; margin-bottom: 16px;
+      background: rgba(0,0,0,0.5); padding: 8px 16px;
+      border-radius: 20px; text-align: center; max-width: 280px;
+    }
+
+    /* ── input bar (hidden until square is placed) ── */
+    #input-row {
+      display: none;
+      pointer-events: all;
+      gap: 8px; align-items: center;
+      background: rgba(0,0,0,0.65);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 999px;
+      padding: 8px 8px 8px 16px;
+      width: 88%; max-width: 340px;
+      margin-bottom: 12px;
+    }
+    #input-row.show { display: flex; }
+    #msg-input {
+      flex: 1; background: transparent;
+      border: none; outline: none;
+      color: #fff; font-size: 0.9rem;
+    }
+    #msg-input::placeholder { color: rgba(255,255,255,0.4); }
+    #send-btn {
+      width: 34px; height: 34px; border-radius: 50%;
+      background: #00d4ff; border: none;
+      font-size: 1rem; cursor: pointer; pointer-events: all;
+    }
+  </style>
+</head>
+<body>
+
+<div id="overlay">
+  <div id="status">Press the button to start</div>
+
+  <!-- input bar -->
+  <div id="input-row">
+    <input id="msg-input" type="text" placeholder="write something…">
+    <button id="send-btn">↑</button>
+  </div>
+
+  <button id="start-btn">Start AR</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+let camera, scene, renderer;
+let xrSession = null;
+let hitTestSource = null;
+let localSpace = null;
+let anchor = null;
+let squareMesh = null;
+let reticleGroup = null;
+let hitTestActive = false;
+let textMeshes = [];
+
+const statusEl  = document.getElementById('status');
+const startBtn  = document.getElementById('start-btn');
+const inputRow  = document.getElementById('input-row');
+const msgInput  = document.getElementById('msg-input');
+const sendBtn   = document.getElementById('send-btn');
+
+/* ── Send text ── */
+sendBtn.addEventListener('click', addText);
+msgInput.addEventListener('keydown', e => { if (e.key === 'Enter') addText(); });
+
+let nextZ = -0.45;
+
+function addText() {
+  const text = msgInput.value.trim();
+  if (!text) return;
+  msgInput.value = '';
+
+  const { mesh, lineCount } = makeTextMesh(text);
+  const lineHeight = 0.055;
+  const meshHeight = lineCount * lineHeight;
+
+  mesh.position.set(0, 0.003, nextZ + meshHeight / 2);
+  squareMesh.add(mesh);
+  textMeshes.push(mesh);
+  nextZ += meshHeight + 0.01;
+}
+
+/* ── Make flat text using canvas texture ── */
+function makeTextMesh(text) {
+  const fontSize = 52;
+  const lineH    = 64;
+  const maxWidth = 900;
+  const padding  = 20;
+
+  /* measure and wrap first */
+  const tmpCanvas = document.createElement('canvas');
+  tmpCanvas.width = 1024;
+  const tmpCtx = tmpCanvas.getContext('2d');
+  tmpCtx.font = `bold ${fontSize}px Arial`;
+
+  const words = text.split(' ');
+  const lines = [];
+  let current = '';
+  for (const word of words) {
+    const test = current ? current + ' ' + word : word;
+    if (tmpCtx.measureText(test).width > maxWidth && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = test;
+    }
+  }
+  if (current) lines.push(current);
+
+  /* size canvas to exactly fit the text */
+  const canvas = document.createElement('canvas');
+  canvas.width  = 1024;
+  canvas.height = lines.length * lineH + padding * 2;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#000000';
+  ctx.font = `bold ${fontSize}px Arial`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  lines.forEach((line, i) => ctx.fillText(line, canvas.width / 2, padding + i * lineH));
+
+  /* mesh size matches canvas aspect ratio, width = 0.9m */
+  const meshW = 0.9;
+  const meshH = meshW * (canvas.height / canvas.width);
+
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(meshW, meshH),
+    new THREE.MeshBasicMaterial({
+      map: new THREE.CanvasTexture(canvas),
+      transparent: true, side: THREE.DoubleSide, depthWrite: false
+    })
+  );
+  mesh.rotation.x = -Math.PI / 2;
+  return { mesh, lineCount: lines.length };
+}
+
+/* ── Init Three.js ── */
+function init() {
+  scene  = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true;
+  renderer.setClearColor(0x000000, 0);
+  document.body.appendChild(renderer.domElement);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 1));
+  const dir = new THREE.DirectionalLight(0xffffff, 1.5);
+  dir.position.set(1, 2, 1);
+  scene.add(dir);
+
+  /* Reticle */
+  reticleGroup = new THREE.Group();
+  const reticleMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, side: THREE.DoubleSide });
+  const outerRing = new THREE.Mesh(new THREE.RingGeometry(0.08, 0.10, 32), reticleMat);
+  const innerDot  = new THREE.Mesh(new THREE.CircleGeometry(0.02, 16), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  outerRing.rotation.x = -Math.PI / 2;
+  innerDot.rotation.x  = -Math.PI / 2;
+  reticleGroup.add(outerRing);
+  reticleGroup.add(innerDot);
+  reticleGroup.visible = false;
+  scene.add(reticleGroup);
+
+  /* Square */
+  squareMesh = buildSquare();
+  squareMesh.visible = false;
+  scene.add(squareMesh);
+
+  window.addEventListener('resize', onResize);
+  startBtn.addEventListener('click', startAR);
+}
+
+function buildSquare() {
+  const group = new THREE.Group();
+  const edges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.PlaneGeometry(1, 1)),
+    new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 6 })
+  );
+  edges.rotation.x = -Math.PI / 2;
+  group.add(edges);
+  group.position.y = 0.001;
+  return group;
+}
+
+/* ── Start AR ── */
+async function startAR() {
+  if (!navigator.xr) { statusEl.textContent = 'WebXR not supported.'; return; }
+  const supported = await navigator.xr.isSessionSupported('immersive-ar');
+  if (!supported) { statusEl.textContent = 'AR not supported on this device.'; return; }
+
+  statusEl.textContent = 'Loading AR…';
+  startBtn.style.display = 'none';
+
+  try {
+    xrSession = await navigator.xr.requestSession('immersive-ar', {
+      requiredFeatures: ['hit-test', 'local-floor'],
+      optionalFeatures: ['anchors', 'dom-overlay'],
+      domOverlay: { root: document.getElementById('overlay') }
+    });
+
+    renderer.xr.setReferenceSpaceType('local-floor');
+    await renderer.xr.setSession(xrSession);
+    xrSession.addEventListener('end', onSessionEnd);
+    localSpace = await xrSession.requestReferenceSpace('local-floor');
+    hitTestSource = await xrSession.requestHitTestSource({ space: await xrSession.requestReferenceSpace('viewer') });
+    hitTestActive = true;
+    statusEl.textContent = 'Point at the floor, then tap';
+    document.addEventListener('click', placeSquare);
+    renderer.setAnimationLoop(onFrame);
+  } catch(err) {
+    statusEl.textContent = 'Error: ' + err.message;
+    startBtn.style.display = '';
+  }
+}
+
+/* ── Place square on tap ── */
+async function placeSquare() {
+  if (!reticleGroup.visible) return;
+
+  const pos = new THREE.Vector3();
+  reticleGroup.getWorldPosition(pos);
+  squareMesh.position.copy(pos);
+  squareMesh.position.y = 0;
+  squareMesh.visible = true;
+
+  /* show input bar */
+  inputRow.classList.add('show');
+  statusEl.textContent = 'Type a message ↑';
+
+  if (xrSession.createAnchor) {
+    try {
+      const frame = renderer.xr.getFrame();
+      anchor = await frame.createAnchor(
+        new XRRigidTransform({ x: pos.x, y: 0, z: pos.z, w: 1 }, { x:0,y:0,z:0,w:1 }),
+        localSpace
+      );
+      hitTestActive = false;
+      reticleGroup.visible = false;
+      document.removeEventListener('click', placeSquare);
+    } catch(e) {}
+  }
+}
+
+/* ── Render loop ── */
+function onFrame(timestamp, frame) {
+  if (!frame) return;
+
+  if (hitTestActive && hitTestSource) {
+    const hits = frame.getHitTestResults(hitTestSource);
+    if (hits.length > 0) {
+      const pose = hits[0].getPose(localSpace);
+      if (pose) {
+        reticleGroup.visible = true;
+        reticleGroup.position.setFromMatrixPosition(new THREE.Matrix4().fromArray(pose.transform.matrix));
+        reticleGroup.quaternion.setFromRotationMatrix(new THREE.Matrix4().fromArray(pose.transform.matrix));
+      }
+    } else {
+      reticleGroup.visible = false;
+    }
+  }
+
+  if (anchor && frame.trackedAnchors?.has(anchor)) {
+    const ap = frame.getPose(anchor.anchorSpace, localSpace);
+    if (ap) {
+      squareMesh.position.setFromMatrixPosition(new THREE.Matrix4().fromArray(ap.transform.matrix));
+      squareMesh.position.y = 0;
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+
+function onSessionEnd() {
+  xrSession = null; anchor = null; hitTestSource = null; hitTestActive = false;
+  squareMesh.visible = false; reticleGroup.visible = false;
+  textMeshes = []; nextZ = -0.45;
+  renderer.setAnimationLoop(null);
+  inputRow.classList.remove('show');
+  startBtn.style.display = '';
+  statusEl.textContent = 'Press the button to start';
+}
+
+function onResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+init();
+</script>
+</body>
+</html>
