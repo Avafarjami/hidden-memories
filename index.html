@@ -1,14 +1,313 @@
-<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
-<html>
+<html lang="fa">
 <head>
-  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-  <meta http-equiv="Content-Style-Type" content="text/css">
-  <title></title>
-  <meta name="Generator" content="Cocoa HTML Writer">
-  <meta name="CocoaVersion" content="2575.7">
-  <style type="text/css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AR Ground Square</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; font-family: sans-serif; }
+    #overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: flex-end;
+      padding-bottom: 40px; pointer-events: none; z-index: 10;
+    }
+    #start-btn {
+      padding: 14px 32px; font-size: 16px; border-radius: 50px;
+      background: rgba(255,255,255,0.9); border: none; cursor: pointer;
+      pointer-events: all; font-weight: 600; color: #111;
+    }
+    #status {
+      color: white; font-size: 14px; margin-bottom: 16px;
+      background: rgba(0,0,0,0.5); padding: 8px 16px;
+      border-radius: 20px; text-align: center; max-width: 280px;
+    }
+    #reticle {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+      width: 32px; height: 32px; pointer-events: none; display: none; z-index: 5;
+    }
   </style>
 </head>
 <body>
+<div id="overlay">
+  <div id="status">برای شروع، دکمه را فشار دهید</div>
+  <button id="start-btn">شروع تجربه AR</button>
+</div>
+
+<!-- نشانگر هدف‌گیری روی زمین -->
+<svg id="reticle" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="50" cy="50" r="40" stroke="white" stroke-width="5"
+    fill="rgba(255,255,255,0.2)" stroke-dasharray="10 5"/>
+  <circle cx="50" cy="50" r="5" fill="white"/>
+</svg>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ────────── متغیرهای اصلی ────────── */
+let camera, scene, renderer;
+let xrSession = null;
+let hitTestSource = null;
+let localSpace = null;
+let anchor = null;        // قفل ثابت به دنیای واقعی
+let squareMesh = null;
+let reticleGroup = null;  // نشانگر موقعیت
+let hitTestActive = false;
+const statusEl = document.getElementById('status');
+const startBtn = document.getElementById('start-btn');
+const reticleSvg = document.getElementById('reticle');
+
+/* ────────── راه‌اندازی صحنه Three.js ────────── */
+function init() {
+  scene = new THREE.Scene();
+
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 20);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true;
+  renderer.setClearColor(0x000000, 0);
+  document.body.appendChild(renderer.domElement);
+
+  /* نور */
+  scene.add(new THREE.AmbientLight(0xffffff, 1));
+  const dir = new THREE.DirectionalLight(0xffffff, 1.5);
+  dir.position.set(1, 2, 1);
+  scene.add(dir);
+
+  /* نشانگر هدف‌گیری (reticle) */
+  reticleGroup = new THREE.Group();
+  const reticleMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, side: THREE.DoubleSide });
+  const outerRing = new THREE.Mesh(
+    new THREE.RingGeometry(0.08, 0.10, 32),
+    reticleMat
+  );
+  const innerDot = new THREE.Mesh(
+    new THREE.CircleGeometry(0.02, 16),
+    new THREE.MeshBasicMaterial({ color: 0xffffff })
+  );
+  outerRing.rotation.x = -Math.PI / 2;
+  innerDot.rotation.x = -Math.PI / 2;
+  reticleGroup.add(outerRing);
+  reticleGroup.add(innerDot);
+  reticleGroup.visible = false;
+  scene.add(reticleGroup);
+
+  /* مربع یک در یک متر (خط‌های کناری + کمی شفاف) */
+  squareMesh = buildSquare();
+  squareMesh.visible = false;
+  scene.add(squareMesh);
+
+  window.addEventListener('resize', onResize);
+  startBtn.addEventListener('click', startAR);
+}
+
+/* ────────── ساخت مربع ────────── */
+function buildSquare() {
+  const group = new THREE.Group();
+
+  /* سطح شفاف */
+  const fill = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshStandardMaterial({
+      color: 0x00aaff,
+      transparent: true,
+      opacity: 0.25,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    })
+  );
+  fill.rotation.x = -Math.PI / 2;
+
+  /* حاشیه */
+  const edges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.PlaneGeometry(1, 1)),
+    new THREE.LineBasicMaterial({ color: 0x00ccff, linewidth: 2 })
+  );
+  edges.rotation.x = -Math.PI / 2;
+
+  /* گوشه‌های تزئینی */
+  const corners = makeCorners();
+
+  group.add(fill);
+  group.add(edges);
+  group.add(corners);
+  group.position.y = 0.001; /* کمی بالاتر از زمین */
+  return group;
+}
+
+function makeCorners() {
+  const group = new THREE.Group();
+  const mat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 3 });
+  const size = 0.12;
+  const half = 0.5;
+  const positions = [
+    [-half, -half, 1, 0], [-half, half, 1, 0],
+    [half, -half, -1, 0], [half, half, -1, 0],
+    [-half, -half, 0, 1], [-half, half, 0, 1],
+    [half, -half, 0, -1], [half, half, 0, -1],
+  ];
+  positions.forEach(([x, z, dx, dz]) => {
+    const pts = [
+      new THREE.Vector3(x, 0, z),
+      new THREE.Vector3(x + dx * size, 0, z + dz * size)
+    ];
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), mat);
+    line.rotation.x = -Math.PI / 2;
+    group.add(line);
+  });
+  return group;
+}
+
+/* ────────── شروع AR ────────── */
+async function startAR() {
+  if (!navigator.xr) {
+    statusEl.textContent = 'WebXR پشتیبانی نمی‌شود. از Chrome/Safari بروزرسان استفاده کنید.';
+    return;
+  }
+  const supported = await navigator.xr.isSessionSupported('immersive-ar');
+  if (!supported) {
+    statusEl.textContent = 'AR روی این دستگاه پشتیبانی نمی‌شود.';
+    return;
+  }
+
+  statusEl.textContent = 'در حال بارگذاری AR...';
+  startBtn.style.display = 'none';
+
+  try {
+    xrSession = await navigator.xr.requestSession('immersive-ar', {
+      requiredFeatures: ['hit-test', 'local-floor'],
+      optionalFeatures: ['anchors', 'dom-overlay'],
+      domOverlay: { root: document.getElementById('overlay') }
+    });
+
+    renderer.xr.setReferenceSpaceType('local-floor');
+    await renderer.xr.setSession(xrSession);
+
+    xrSession.addEventListener('end', onSessionEnd);
+    localSpace = await xrSession.requestReferenceSpace('local-floor');
+
+    /* Hit-test برای یافتن سطح زمین */
+    const viewerSpace = await xrSession.requestReferenceSpace('viewer');
+    hitTestSource = await xrSession.requestHitTestSource({ space: viewerSpace });
+    hitTestActive = true;
+
+    statusEl.textContent = 'دوربین را به سمت زمین بگیرید، سپس روی نشانگر ضربه بزنید';
+
+    /* لمس روی صفحه = قرار دادن مربع */
+    document.addEventListener('click', placeSquare, { once: false });
+    renderer.setAnimationLoop(onFrame);
+
+  } catch (err) {
+    statusEl.textContent = 'خطا: ' + err.message;
+    startBtn.style.display = '';
+  }
+}
+
+/* ────────── قرار دادن مربع و قفل کردن به Anchor ────────── */
+async function placeSquare() {
+  if (!reticleGroup.visible) return;
+
+  const pos = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  reticleGroup.getWorldPosition(pos);
+  reticleGroup.getWorldQuaternion(quat);
+
+  squareMesh.position.copy(pos);
+  squareMesh.position.y = 0;
+  squareMesh.quaternion.copy(quat);
+  squareMesh.visible = true;
+
+  /* تلاش برای ایجاد Anchor (قفل ثابت) */
+  if (xrSession.createAnchor) {
+    try {
+      const frame = renderer.xr.getFrame();
+      const pose = new XRRigidTransform(
+        { x: pos.x, y: 0, z: pos.z, w: 1 },
+        { x: 0, y: 0, z: 0, w: 1 }
+      );
+      anchor = await frame.createAnchor(pose, localSpace);
+      hitTestActive = false;
+      reticleGroup.visible = false;
+      reticleSvg.style.display = 'none';
+      statusEl.textContent = 'مربع قفل شد ✓ می‌توانید آزادانه حرکت کنید';
+      document.removeEventListener('click', placeSquare);
+    } catch (e) {
+      /* اگر Anchor در دسترس نبود، موقعیت ثابت در صحنه می‌ماند */
+      statusEl.textContent = 'مربع قرار گرفت (بدون Anchor)';
+    }
+  } else {
+    statusEl.textContent = 'مربع قرار گرفت';
+  }
+}
+
+/* ────────── حلقه اصلی رندر ────────── */
+function onFrame(timestamp, frame) {
+  if (!frame) return;
+
+  /* Hit-test: یافتن موقعیت زمین */
+  if (hitTestActive && hitTestSource) {
+    const hits = frame.getHitTestResults(hitTestSource);
+    if (hits.length > 0) {
+      const hit = hits[0];
+      const pose = hit.getPose(localSpace);
+      if (pose) {
+        reticleGroup.visible = true;
+        reticleSvg.style.display = 'block';
+        reticleGroup.position.setFromMatrixPosition(new THREE.Matrix4().fromArray(pose.transform.matrix));
+        reticleGroup.quaternion.setFromRotationMatrix(new THREE.Matrix4().fromArray(pose.transform.matrix));
+      }
+    } else {
+      reticleGroup.visible = false;
+    }
+  }
+
+  /* اگر Anchor داریم، موقعیت مربع را به Anchor قفل می‌کنیم */
+  if (anchor) {
+    const anchorPoses = frame.trackedAnchors;
+    if (anchorPoses && anchorPoses.has(anchor)) {
+      const anchorPose = frame.getPose(anchor.anchorSpace, localSpace);
+      if (anchorPose) {
+        const m = new THREE.Matrix4().fromArray(anchorPose.transform.matrix);
+        squareMesh.position.setFromMatrixPosition(m);
+        squareMesh.position.y = 0;
+      }
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+
+/* ────────── رویدادها ────────── */
+function onSessionEnd() {
+  xrSession = null;
+  anchor = null;
+  hitTestSource = null;
+  hitTestActive = false;
+  squareMesh.visible = false;
+  reticleGroup.visible = false;
+  renderer.setAnimationLoop(null);
+  startBtn.style.display = '';
+  statusEl.textContent = 'برای شروع، دکمه را فشار دهید';
+}
+
+function onResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+init();
+</script>
 </body>
 </html>
