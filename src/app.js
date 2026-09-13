@@ -32,6 +32,11 @@ let cameraOk = false;
 
 function setStatus(text) { els.status.textContent = text; }
 
+function countLabel(count, layers) {
+  const m = count === 1 ? '1 message' : `${count} messages`;
+  return layers > 1 ? `${m} on ${layers} squares` : m;
+}
+
 function storeLabel(source) {
   return source === 'api' ? 'shared with everyone' : 'saved on this device only';
 }
@@ -105,10 +110,10 @@ async function onPlaced() {
   setStatus('Loading messages…');
   const result = await loadMessages();
   messages = result.messages;
-  const shown = view.showMessages(messages);
+  const { layers } = view.showMessages(messages);
   if (result.error) console.warn('Falling back to local messages:', result.error);
   setStatus(messages.length
-    ? `${shown} of ${messages.length} messages · ${storeLabel(result.source)}`
+    ? `${countLabel(messages.length, layers)} · ${storeLabel(result.source)}`
     : `No messages yet. Write the first one ↑ (${storeLabel(result.source)})`);
   els.input.focus({ preventScroll: true });
 }
@@ -123,9 +128,9 @@ async function onSubmit(event) {
     const { message, source, error } = await saveMessage(text);
     els.input.value = '';
     messages = [...messages, message];
-    const shown = view.showMessages(messages);
+    const { layers } = view.showMessages(messages);
     if (error) console.warn('Saved locally because the server did not answer:', error);
-    setStatus(`${shown} of ${messages.length} messages · ${storeLabel(source)}`);
+    setStatus(`${countLabel(messages.length, layers)} · ${storeLabel(source)}`);
   } catch (err) {
     setStatus(err.message || 'Could not save the message.');
   } finally {
@@ -152,6 +157,9 @@ els.form.addEventListener('submit', onSubmit);
 els.input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); els.form.requestSubmit(); }
 });
+
+// `?debug` exposes the scene for manual testing and screenshots from the console.
+if (new URLSearchParams(location.search).has('debug')) window.hiddenMemories = { view };
 
 if (!API_BASE) console.info('API_BASE is empty: messages stay in this browser. Set it in src/config.js to share them.');
 detect();

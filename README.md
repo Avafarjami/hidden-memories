@@ -1,6 +1,6 @@
 # Hidden Memories
 
-An augmented reality web app where you tap the floor to place a virtual square and write short messages that appear on it. Messages are shared, so everyone who opens the app sees them.
+An augmented reality web app where you tap the floor to place a virtual square and write short messages that appear on it. Messages are shared, so everyone who opens the app sees them. When a square is full, its text fades to 30% and a new square appears 0.3 m above it for the next messages (see `LAYER_GAP` and `DIM_OPACITY` in `src/scene.js`).
 
 ## How it works on each device
 

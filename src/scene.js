@@ -11,6 +11,11 @@ export const SQUARE_SIZE = 0.9; // metres, side length of the floor square
 const SQUARE_PADDING = 0.03;
 const MESSAGE_GAP = 0.012;
 
+// When a square is full, a new one appears this far above it. Every square
+// except the newest is dimmed so the current one stands out.
+export const LAYER_GAP = 0.3;      // metres between stacked squares
+export const DIM_OPACITY = 0.3;    // opacity of text and plate on filled squares
+
 // Text is rasterised to a canvas; these are canvas pixels, not metres.
 const CANVAS_WIDTH = 1024;
 const FONT_SIZE = 52;
@@ -36,11 +41,10 @@ export function createScene() {
 
   const square = new THREE.Group();
   square.visible = false;
-  square.add(makeSquareOutline());
   scene.add(square);
 
-  /** Messages currently drawn on the square, so they can be disposed later. */
-  const textMeshes = [];
+  /** Stacked squares currently shown, each holding its own text meshes. */
+  const layers = [];
 
   function resize() {
     camera.aspect = innerWidth / innerHeight;
@@ -50,45 +54,64 @@ export function createScene() {
   window.addEventListener('resize', resize);
 
   function clearMessages() {
-    for (const mesh of textMeshes) {
-      square.remove(mesh);
-      mesh.geometry.dispose();
-      mesh.material.map?.dispose();
-      mesh.material.dispose();
+    for (const layer of layers) {
+      square.remove(layer.group);
+      for (const mesh of layer.meshes) disposeMesh(mesh);
+      for (const part of layer.outline) disposeMesh(part);
     }
-    textMeshes.length = 0;
+    layers.length = 0;
   }
 
   /**
-   * Draws messages oldest-to-newest from the far edge of the square toward
-   * the viewer. When they do not all fit, the oldest are dropped so the
-   * newest message is always visible.
+   * Fills squares oldest-to-newest. Messages run from the far edge of a
+   * square toward the viewer; when the next one would not fit, a new square
+   * starts one LAYER_GAP higher. Only the top square is fully opaque, so the
+   * place where new messages land is obvious at a glance.
+   *
+   * @returns {{ shown: number, layers: number }}
    */
   function showMessages(messages) {
     clearMessages();
     const usable = SQUARE_SIZE - SQUARE_PADDING * 2;
-    const built = messages.map((m) => makeTextMesh(m.text, renderer));
 
-    // Walk backwards from the newest, keeping as many as fit.
-    let total = 0;
-    let firstIndex = built.length;
-    for (let i = built.length - 1; i >= 0; i--) {
-      const h = built[i].height + (total > 0 ? MESSAGE_GAP : 0);
-      if (total + h > usable) break;
-      total += h;
-      firstIndex = i;
+    // Group into pages first so we know which one is on top.
+    const pages = [[]];
+    let used = 0;
+    for (const m of messages) {
+      const built = makeTextMesh(m.text, renderer);
+      const page = pages[pages.length - 1];
+      const needed = built.height + (page.length ? MESSAGE_GAP : 0);
+      if (page.length && used + needed > usable) {
+        pages.push([built]);
+        used = built.height;
+      } else {
+        page.push(built);
+        used += needed;
+      }
     }
-    for (let i = 0; i < firstIndex; i++) disposeMesh(built[i].mesh);
 
-    let z = -usable / 2;
-    for (let i = firstIndex; i < built.length; i++) {
-      const { mesh, height } = built[i];
-      mesh.position.set(0, 0.004, z + height / 2);
-      square.add(mesh);
-      textMeshes.push(mesh);
-      z += height + MESSAGE_GAP;
-    }
-    return built.length - firstIndex;
+    pages.forEach((page, index) => {
+      const isTop = index === pages.length - 1;
+      const opacity = isTop ? 1 : DIM_OPACITY;
+      const outline = makeSquareOutline(opacity);
+      const group = new THREE.Group();
+      group.position.y = index * LAYER_GAP;
+      for (const part of outline) group.add(part);
+
+      const meshes = [];
+      let z = -usable / 2;
+      for (const { mesh, height } of page) {
+        mesh.position.set(0, 0.004, z + height / 2);
+        mesh.material.opacity = opacity;
+        group.add(mesh);
+        meshes.push(mesh);
+        z += height + MESSAGE_GAP;
+      }
+      square.add(group);
+      layers.push({ group, meshes, outline });
+    });
+
+    return { shown: messages.length, layers: pages.length };
   }
 
   /** Puts the scene back to its pre-session state. */
@@ -121,24 +144,25 @@ function makeReticle() {
   return group;
 }
 
-/** A faint white plate and outline so the square reads on any floor. */
-function makeSquareOutline() {
-  const group = new THREE.Group();
+/**
+ * A faint white plate and outline so a square reads on any floor. Returns
+ * the parts separately so the caller can dispose them with its text meshes.
+ */
+function makeSquareOutline(opacity = 1) {
   const plate = new THREE.Mesh(
     new THREE.PlaneGeometry(SQUARE_SIZE, SQUARE_SIZE),
     new THREE.MeshBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false
+      color: 0xffffff, transparent: true, opacity: 0.28 * opacity, side: THREE.DoubleSide, depthWrite: false
     })
   );
   plate.rotation.x = -Math.PI / 2;
   const edges = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.PlaneGeometry(SQUARE_SIZE, SQUARE_SIZE)),
-    new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 })
+    new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 * opacity })
   );
   edges.rotation.x = -Math.PI / 2;
   edges.position.y = 0.002;
-  group.add(plate, edges);
-  return group;
+  return [plate, edges];
 }
 
 function disposeMesh(mesh) {
