@@ -36,9 +36,16 @@ const FONT = `bold ${FONT_SIZE}px Arial, Helvetica, sans-serif`;
 // first version, which is the size that looked right on the pavement.
 const TEXT_WIDTH = 0.9;
 
+// Vertical field of view for the camera-fallback path (WebXR supplies its
+// own from the device, so this is unused there). 70° is a reasonable guess
+// for a phone's main rear lens; if the writing area still looks the wrong
+// size on a specific phone after matching the video's aspect ratio, this is
+// the number to tune — browsers do not expose a camera's real FOV.
+const FALLBACK_CAMERA_FOV_DEG = 70;
+
 export function createScene() {
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.01, 50);
+  const camera = new THREE.PerspectiveCamera(FALLBACK_CAMERA_FOV_DEG, innerWidth / innerHeight, 0.01, 50);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));

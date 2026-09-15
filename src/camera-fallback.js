@@ -54,8 +54,23 @@ export async function requestMotionPermission() {
 export async function startFallback({ view, video, motionGranted, onPlace, onEnd }) {
   const { renderer, scene, camera, reticle, area, orientArea } = view;
 
+  // Ask for a video shaped like the actual screen (portrait on a phone),
+  // not a fixed landscape size. #camera-feed uses `object-fit: cover`, so a
+  // landscape video stretched to fill a tall portrait screen gets cropped
+  // hard on the sides — a real-world zoom the virtual camera below knows
+  // nothing about. That mismatch is why real-world objects read bigger than
+  // they are and anything drawn in the scene, like the 1 m writing area,
+  // reads correspondingly smaller. Matching the aspect ratio removes most
+  // of the crop; it cannot be exact, since browsers do not expose a
+  // camera's true field of view.
+  const dpr = Math.min(devicePixelRatio || 1, 2);
   const stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+    video: {
+      facingMode: { ideal: 'environment' },
+      aspectRatio: { ideal: innerWidth / innerHeight },
+      width: { ideal: Math.round(innerWidth * dpr) },
+      height: { ideal: Math.round(innerHeight * dpr) }
+    },
     audio: false
   });
   video.srcObject = stream;
