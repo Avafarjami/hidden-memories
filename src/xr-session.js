@@ -1,13 +1,14 @@
 /**
  * WebXR path (Android Chrome and any browser with immersive-ar).
  *
- * Real floor detection via hit-test, an anchor so the square stays put while
+ * Real floor detection via hit-test, an anchor so the text stays put while
  * the phone moves, and the page's own DOM as the overlay so the same UI works
  * in both AR modes.
  */
 import * as THREE from 'three';
 
 const poseMatrix = new THREE.Matrix4();
+const viewerPosition = new THREE.Vector3();
 
 export async function isXrAvailable() {
   if (!navigator.xr?.isSessionSupported) return false;
@@ -18,12 +19,12 @@ export async function isXrAvailable() {
  * @param {object} opts
  * @param {import('./scene.js')} opts.view      result of createScene()
  * @param {HTMLElement} opts.overlayRoot        DOM overlay root
- * @param {HTMLElement[]} opts.uiElements       taps on these must not place the square
+ * @param {HTMLElement[]} opts.uiElements       taps on these must not place the area
  * @param {(position: THREE.Vector3) => void} opts.onPlace
  * @param {() => void} opts.onEnd
  */
 export async function startXr({ view, overlayRoot, uiElements, onPlace, onEnd }) {
-  const { renderer, scene, camera, reticle, square } = view;
+  const { renderer, scene, camera, reticle, area, orientArea } = view;
 
   const session = await navigator.xr.requestSession('immersive-ar', {
     requiredFeatures: ['hit-test', 'local-floor'],
@@ -48,25 +49,27 @@ export async function startXr({ view, overlayRoot, uiElements, onPlace, onEnd })
   async function onSelect() {
     if (!placing || !reticle.visible) return;
     placing = false;
-    square.position.copy(reticle.position);
-    square.quaternion.copy(reticle.quaternion);
-    square.visible = true;
+    area.position.copy(reticle.position);
+    // Length runs away from where the phone is right now.
+    renderer.xr.getCamera().getWorldPosition(viewerPosition);
+    orientArea(viewerPosition);
+    area.visible = true;
     reticle.visible = false;
 
-    // Anchors survive tracking corrections; without one the square drifts
+    // Anchors survive tracking corrections; without one the text drifts
     // slightly as the phone refines its map of the room.
     const frame = renderer.xr.getFrame();
     if (frame?.createAnchor) {
       try {
         anchor = await frame.createAnchor(
-          new XRRigidTransform(square.position, square.quaternion),
+          new XRRigidTransform(area.position, area.quaternion),
           localSpace
         );
       } catch {
         anchor = null;
       }
     }
-    onPlace(square.position);
+    onPlace(area.position);
   }
   session.addEventListener('select', onSelect);
 
@@ -87,8 +90,8 @@ export async function startXr({ view, overlayRoot, uiElements, onPlace, onEnd })
       const pose = frame.getPose(anchor.anchorSpace, localSpace);
       if (pose) {
         poseMatrix.fromArray(pose.transform.matrix);
-        square.position.setFromMatrixPosition(poseMatrix);
-        square.quaternion.setFromRotationMatrix(poseMatrix);
+        area.position.setFromMatrixPosition(poseMatrix);
+        area.quaternion.setFromRotationMatrix(poseMatrix);
       }
     }
     renderer.render(scene, camera);

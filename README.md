@@ -1,6 +1,6 @@
 # Hidden Memories
 
-An augmented reality web app where you tap the floor to place a virtual square and write short messages that appear on it. Messages are shared, so everyone who opens the app sees them. When a square is full, its text fades to 30% and a new square appears 0.3 m above it for the next messages (see `LAYER_GAP` and `DIM_OPACITY` in `src/scene.js`).
+An augmented reality web app where you tap the floor to mark a writing area and leave short messages that appear on the ground. Messages are shared, so everyone who opens the app sees them. Text is drawn straight onto the floor inside a 1 × 1 m writing area (`AREA_WIDTH` × `AREA_LENGTH` in `src/scene.js`; make the length 2 or 3 for a strip people walk along). When the area is full, the text already there fades to 30% and new messages are written over it from the far edge again (`DIM_OPACITY`, `DIM_PAGES`).
 
 ## How it works on each device
 
@@ -18,7 +18,7 @@ An augmented reality web app where you tap the floor to place a virtual square a
 | `style.css` | Styling |
 | `src/config.js` | API base URL and settings |
 | `src/app.js` | Startup, mode detection, UI wiring |
-| `src/scene.js` | Three.js scene: reticle, floor square, text layout |
+| `src/scene.js` | Three.js scene: reticle, writing area, text layout |
 | `src/xr-session.js` | WebXR path |
 | `src/camera-fallback.js` | getUserMedia + orientation path |
 | `src/messages.js` | Loads and saves messages; talks to the API, falls back to localStorage when offline |
@@ -27,7 +27,7 @@ An augmented reality web app where you tap the floor to place a virtual square a
 
 ## Shared messages (API)
 
-`src/config.js` has `API_BASE`. When empty, messages are stored only in the browser's localStorage. When set to a server URL (e.g., https://yourdomain.com), the app calls:
+`src/config.js` has `API_BASE`, set to https://avafarjami.com (the portfolio server). When empty, or when the server does not answer, messages are stored only in the browser's localStorage. With a server, the app calls:
 
 - `GET /api/memories` — retrieve all messages
 - `POST /api/memories` — submit a new message with JSON body `{ "text": "..." }`

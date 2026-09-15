@@ -5,7 +5,7 @@
  * portfolio server, which exposes GET/POST /api/memories). Leave it empty to
  * keep messages only in this browser's localStorage. No trailing slash.
  */
-export const API_BASE = '';
+export const API_BASE = 'https://avafarjami.com';
 
 /** How many of the most recent messages to fetch and show. */
 export const MESSAGE_LIMIT = 50;

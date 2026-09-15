@@ -2,19 +2,26 @@
  * Three.js scene shared by both AR paths.
  *
  * Owns the renderer, the reticle shown while aiming at the floor, and the
- * floor square that messages are laid out on. Neither AR path knows how
- * messages are drawn; they only move the reticle and the square.
+ * writing area that messages are laid out on. Text is drawn straight onto
+ * the floor: there is no plate or outline, only the messages themselves.
+ * Neither AR path knows how messages are drawn; they only move the reticle
+ * and the area.
  */
 import * as THREE from 'three';
 
-export const SQUARE_SIZE = 0.9; // metres, side length of the floor square
-const SQUARE_PADDING = 0.03;
+// The writing area, in metres. Width runs left-right in front of the
+// viewer, length runs away from them. Make AREA_LENGTH 2 or 3 for a strip
+// people have to walk along to read.
+export const AREA_WIDTH = 1.0;
+export const AREA_LENGTH = 1.0;
+const AREA_PADDING = 0.02;
 const MESSAGE_GAP = 0.012;
 
-// When a square is full, a new one appears this far above it. Every square
-// except the newest is dimmed so the current one stands out.
-export const LAYER_GAP = 0.3;      // metres between stacked squares
-export const DIM_OPACITY = 0.3;    // opacity of text and plate on filled squares
+// When the area is full, the messages already on it fade to DIM_OPACITY and
+// the next messages start again from the far edge on top of them. DIM_PAGES
+// is how many earlier, faded pages stay visible under the current one.
+export const DIM_OPACITY = 0.3;
+export const DIM_PAGES = 1;
 
 // Text is rasterised to a canvas; these are canvas pixels, not metres.
 const CANVAS_WIDTH = 1024;
@@ -39,12 +46,13 @@ export function createScene() {
   const reticle = makeReticle();
   scene.add(reticle);
 
-  const square = new THREE.Group();
-  square.visible = false;
-  scene.add(square);
+  /** The writing area. Local -Z is "away from the viewer". */
+  const area = new THREE.Group();
+  area.visible = false;
+  scene.add(area);
 
-  /** Stacked squares currently shown, each holding its own text meshes. */
-  const layers = [];
+  /** Text meshes currently on the floor, so they can be disposed later. */
+  const drawn = [];
 
   function resize() {
     camera.aspect = innerWidth / innerHeight;
@@ -54,34 +62,44 @@ export function createScene() {
   window.addEventListener('resize', resize);
 
   function clearMessages() {
-    for (const layer of layers) {
-      square.remove(layer.group);
-      for (const mesh of layer.meshes) disposeMesh(mesh);
-      for (const part of layer.outline) disposeMesh(part);
+    for (const mesh of drawn) {
+      area.remove(mesh);
+      disposeMesh(mesh);
     }
-    layers.length = 0;
+    drawn.length = 0;
   }
 
   /**
-   * Fills squares oldest-to-newest. Messages run from the far edge of a
-   * square toward the viewer; when the next one would not fit, a new square
-   * starts one LAYER_GAP higher. Only the top square is fully opaque, so the
-   * place where new messages land is obvious at a glance.
+   * Turns the area so its length runs away from `viewerPosition`: the
+   * viewer stands at the near edge and reads (or walks) into it.
+   */
+  function orientArea(viewerPosition) {
+    area.rotation.set(
+      0,
+      Math.atan2(viewerPosition.x - area.position.x, viewerPosition.z - area.position.z),
+      0
+    );
+  }
+
+  /**
+   * Lays messages out oldest-to-newest from the far edge toward the viewer.
+   * When they overflow the area, they are split into pages; the newest page
+   * is drawn at full opacity and up to DIM_PAGES earlier pages underneath
+   * it, faded, on the same floor.
    *
-   * @returns {{ shown: number, layers: number }}
+   * @returns {{ shown: number, faded: number, pages: number }}
    */
   function showMessages(messages) {
     clearMessages();
-    const usable = SQUARE_SIZE - SQUARE_PADDING * 2;
+    const usableLength = AREA_LENGTH - AREA_PADDING * 2;
 
-    // Group into pages first so we know which one is on top.
     const pages = [[]];
     let used = 0;
     for (const m of messages) {
       const built = makeTextMesh(m.text, renderer);
       const page = pages[pages.length - 1];
       const needed = built.height + (page.length ? MESSAGE_GAP : 0);
-      if (page.length && used + needed > usable) {
+      if (page.length && used + needed > usableLength) {
         pages.push([built]);
         used = built.height;
       } else {
@@ -90,41 +108,45 @@ export function createScene() {
       }
     }
 
-    pages.forEach((page, index) => {
-      const isTop = index === pages.length - 1;
-      const opacity = isTop ? 1 : DIM_OPACITY;
-      const outline = makeSquareOutline(opacity);
-      const group = new THREE.Group();
-      group.position.y = index * LAYER_GAP;
-      for (const part of outline) group.add(part);
+    const keep = pages.slice(-(DIM_PAGES + 1));
+    for (const page of pages.slice(0, -(DIM_PAGES + 1))) {
+      for (const { mesh } of page) disposeMesh(mesh);
+    }
 
-      const meshes = [];
-      let z = -usable / 2;
+    let shown = 0;
+    let faded = 0;
+    keep.forEach((page, index) => {
+      const isCurrent = index === keep.length - 1;
+      const opacity = isCurrent ? 1 : DIM_OPACITY;
+      let z = -usableLength / 2;
       for (const { mesh, height } of page) {
-        mesh.position.set(0, 0.004, z + height / 2);
+        // A hair above the floor, each page a hair above the last, so the
+        // overlapping planes never fight over the same depth.
+        mesh.position.set(0, 0.003 + index * 0.002, z + height / 2);
         mesh.material.opacity = opacity;
-        group.add(mesh);
-        meshes.push(mesh);
+        mesh.renderOrder = index;
+        area.add(mesh);
+        drawn.push(mesh);
         z += height + MESSAGE_GAP;
+        shown++;
+        if (!isCurrent) faded++;
       }
-      square.add(group);
-      layers.push({ group, meshes, outline });
     });
 
-    return { shown: messages.length, layers: pages.length };
+    return { shown, faded, pages: pages.length };
   }
 
   /** Puts the scene back to its pre-session state. */
   function reset() {
     clearMessages();
-    square.visible = false;
+    area.visible = false;
     reticle.visible = false;
     // The animation loop has stopped, so wipe the last frame by hand or the
-    // square lingers on screen behind the start button.
+    // text lingers on screen behind the start button.
     renderer.clear();
   }
 
-  return { scene, camera, renderer, reticle, square, showMessages, clearMessages, reset, resize };
+  return { scene, camera, renderer, reticle, area, orientArea, showMessages, clearMessages, reset, resize };
 }
 
 function makeReticle() {
@@ -142,27 +164,6 @@ function makeReticle() {
   group.add(ring, dot);
   group.visible = false;
   return group;
-}
-
-/**
- * A faint white plate and outline so a square reads on any floor. Returns
- * the parts separately so the caller can dispose them with its text meshes.
- */
-function makeSquareOutline(opacity = 1) {
-  const plate = new THREE.Mesh(
-    new THREE.PlaneGeometry(SQUARE_SIZE, SQUARE_SIZE),
-    new THREE.MeshBasicMaterial({
-      color: 0xffffff, transparent: true, opacity: 0.28 * opacity, side: THREE.DoubleSide, depthWrite: false
-    })
-  );
-  plate.rotation.x = -Math.PI / 2;
-  const edges = new THREE.LineSegments(
-    new THREE.EdgesGeometry(new THREE.PlaneGeometry(SQUARE_SIZE, SQUARE_SIZE)),
-    new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 * opacity })
-  );
-  edges.rotation.x = -Math.PI / 2;
-  edges.position.y = 0.002;
-  return [plate, edges];
 }
 
 function disposeMesh(mesh) {
@@ -201,16 +202,24 @@ function makeTextMesh(text, renderer) {
 
   canvas.height = lines.length * LINE_HEIGHT + TEXT_PADDING * 2;
   ctx.font = FONT; // resizing the canvas resets its state
-  ctx.fillStyle = '#111111';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  lines.forEach((line, i) => ctx.fillText(line, canvas.width / 2, TEXT_PADDING + i * LINE_HEIGHT));
+  ctx.lineJoin = 'round';
+  // A soft light halo keeps dark text legible on a dark floor without a plate.
+  ctx.lineWidth = 10;
+  ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+  ctx.fillStyle = '#111111';
+  lines.forEach((line, i) => {
+    const y = TEXT_PADDING + i * LINE_HEIGHT;
+    ctx.strokeText(line, canvas.width / 2, y);
+    ctx.fillText(line, canvas.width / 2, y);
+  });
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
-  const width = SQUARE_SIZE - SQUARE_PADDING * 2;
+  const width = AREA_WIDTH - AREA_PADDING * 2;
   const height = width * (canvas.height / canvas.width);
   const mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(width, height),

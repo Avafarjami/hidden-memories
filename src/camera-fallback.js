@@ -6,7 +6,7 @@
  * drawn on top with a transparent background. The phone's motion sensors
  * aim the virtual camera, and the floor is assumed to be a flat plane 1.4 m
  * below the phone. That gives a convincing "look down, tap, place" feel but
- * no real tracking: walking around will make the square drift. Desktop has
+ * no real tracking: walking around will make the text drift. Desktop has
  * no sensors, so dragging with the pointer looks around instead.
  */
 import * as THREE from 'three';
@@ -52,7 +52,7 @@ export async function requestMotionPermission() {
  * @param {() => void} opts.onEnd
  */
 export async function startFallback({ view, video, motionGranted, onPlace, onEnd }) {
-  const { renderer, scene, camera, reticle, square } = view;
+  const { renderer, scene, camera, reticle, area, orientArea } = view;
 
   const stream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -112,11 +112,11 @@ export async function startFallback({ view, video, motionGranted, onPlace, onEnd
   function place() {
     if (!placing || !reticle.visible) return;
     placing = false;
-    square.position.copy(reticle.position);
-    square.rotation.set(0, camera.rotation.y, 0);
-    square.visible = true;
+    area.position.copy(reticle.position);
+    orientArea(camera.position);
+    area.visible = true;
     reticle.visible = false;
-    onPlace(square.position);
+    onPlace(area.position);
   }
 
   function updateCamera() {

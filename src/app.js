@@ -3,7 +3,7 @@
  *
  * Picks the AR path the device can run (WebXR where it exists, the camera
  * fallback everywhere else), drives the small overlay UI, and keeps the
- * square in sync with the shared message list.
+ * writing area in sync with the shared message list.
  */
 import { createScene } from './scene.js';
 import { isXrAvailable, startXr } from './xr-session.js';
@@ -32,9 +32,9 @@ let cameraOk = false;
 
 function setStatus(text) { els.status.textContent = text; }
 
-function countLabel(count, layers) {
+function countLabel(count, faded) {
   const m = count === 1 ? '1 message' : `${count} messages`;
-  return layers > 1 ? `${m} on ${layers} squares` : m;
+  return faded ? `${m} · ${faded} faded` : m;
 }
 
 function storeLabel(source) {
@@ -86,7 +86,7 @@ async function start() {
         onPlace: onPlaced,
         onEnd: onEnded
       });
-      setStatus('Move the phone slowly, then tap the floor to place');
+      setStatus('Move the phone slowly, then tap the floor to start writing');
     } else {
       // Order matters on iOS: the sensor prompt must come straight from the tap.
       const motionGranted = await requestMotionPermission();
@@ -110,10 +110,10 @@ async function onPlaced() {
   setStatus('Loading messages…');
   const result = await loadMessages();
   messages = result.messages;
-  const { layers } = view.showMessages(messages);
+  const { faded } = view.showMessages(messages);
   if (result.error) console.warn('Falling back to local messages:', result.error);
   setStatus(messages.length
-    ? `${countLabel(messages.length, layers)} · ${storeLabel(result.source)}`
+    ? `${countLabel(messages.length, faded)} · ${storeLabel(result.source)}`
     : `No messages yet. Write the first one ↑ (${storeLabel(result.source)})`);
   els.input.focus({ preventScroll: true });
 }
@@ -128,9 +128,9 @@ async function onSubmit(event) {
     const { message, source, error } = await saveMessage(text);
     els.input.value = '';
     messages = [...messages, message];
-    const { layers } = view.showMessages(messages);
+    const { faded } = view.showMessages(messages);
     if (error) console.warn('Saved locally because the server did not answer:', error);
-    setStatus(`${countLabel(messages.length, layers)} · ${storeLabel(source)}`);
+    setStatus(`${countLabel(messages.length, faded)} · ${storeLabel(source)}`);
   } catch (err) {
     setStatus(err.message || 'Could not save the message.');
   } finally {
