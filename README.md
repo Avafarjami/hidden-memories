@@ -10,19 +10,13 @@ An augmented reality web app where you tap the floor to mark a writing area and 
 
 **Desktop**: Camera mode with drag-to-look, mainly for development.
 
-## Real AR tracking on iPhone (optional)
+## Real AR tracking on iPhone
 
-The camera-only fallback above has no positional tracking: it only follows the phone's rotation, so text drifts if you walk instead of staying glued to the floor. [Variant Launch](https://launch.variant3d.com/) fixes this by running the same WebXR code this app already uses for Android, on iPhone too, through an App Clip — no App Store install. It is off by default; turning it on does not change anything for Android or desktop.
+The camera-only fallback described above has no positional tracking: it only follows the phone's rotation, so text drifts if you walk instead of staying glued to the floor. [Variant Launch](https://launch.variant3d.com/) fixes this by running the same WebXR code this app already uses for Android, on iPhone too, through an App Clip — no App Store install. It is wired in via the SDK script tag near the top of `index.html`'s `<head>`, which must keep loading before `src/app.js` checks for WebXR support. On Android and desktop it changes nothing.
 
-Free tier: 5,000 views/month with a small "Powered by Variant" mark — plenty for a small, one-off project. Removing the mark is a one-time $299 per project if it's ever needed.
+The project is on Variant's free tier: 5,000 views/month with a small "Powered by Variant" mark, plenty for this project's scale. Removing the mark is a one-time $299 if it's ever needed.
 
-To turn it on:
-
-1. Sign up free at [launch.variant3d.com](https://launch.variant3d.com/) and create a project.
-2. In the Launch Admin dashboard, authorise the domain this app is served from — the **whole domain** (e.g. `avafarjami.com`), not just the `/hidden-memories` path.
-3. Copy the SDK key from the dashboard.
-4. In `index.html`, find the commented-out `<script src="https://launchar.app/sdk/v1?key=YOUR_SDK_KEY...">` tag near the top of `<head>`, paste the key in place of `YOUR_SDK_KEY`, and delete the `<!--` `-->` around it.
-5. Deploy. On an iPhone that needs it, the SDK opens the Launch app clip automatically; everything else about the app — placing, writing, the shared messages — stays the same.
+This only works while the domain the app is served from stays authorised in the [Launch Admin](https://launch.variant3d.com/) dashboard — the **whole domain** (e.g. `avafarjami.com`), not just the `/hidden-memories` path. If the SDK key is ever rotated, replace it in the `<script src="https://launchar.app/sdk/v1?key=...">` tag in `index.html` (and in `static/hidden-memories/index.html` in the art-portfolio repo, which ships a copy of this app).
 
 ## Project structure
 
