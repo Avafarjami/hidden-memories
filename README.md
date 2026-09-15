@@ -27,7 +27,7 @@ An augmented reality web app where you tap the floor to mark a writing area and 
 
 ## Shared messages (API)
 
-`src/config.js` has `API_BASE`, set to https://avafarjami.com (the portfolio server). When empty, or when the server does not answer, messages are stored only in the browser's localStorage. With a server, the app calls:
+`src/config.js` has `API_BASE`. Empty means the same origin the app is served from (the portfolio server). When the server does not answer, messages are stored only in the browser's localStorage. The app calls:
 
 - `GET /api/memories` — retrieve all messages
 - `POST /api/memories` — submit a new message with JSON body `{ "text": "..." }`

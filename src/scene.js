@@ -29,7 +29,12 @@ const FONT_SIZE = 52;
 const LINE_HEIGHT = 64;
 const TEXT_MAX_WIDTH = 920;
 const TEXT_PADDING = 16;
-const FONT = `bold ${FONT_SIZE}px system-ui, -apple-system, "Segoe UI", Arial, sans-serif`;
+// Plain bold Arial, as in the first version of the app: simple black text
+// straight on the ground.
+const FONT = `bold ${FONT_SIZE}px Arial, Helvetica, sans-serif`;
+// Width of one line of text on the floor, in metres. The same 0.9 m as the
+// first version, which is the size that looked right on the pavement.
+const TEXT_WIDTH = 0.9;
 
 export function createScene() {
   const scene = new THREE.Scene();
@@ -204,22 +209,14 @@ function makeTextMesh(text, renderer) {
   ctx.font = FONT; // resizing the canvas resets its state
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  ctx.lineJoin = 'round';
-  // A soft light halo keeps dark text legible on a dark floor without a plate.
-  ctx.lineWidth = 10;
-  ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-  ctx.fillStyle = '#111111';
-  lines.forEach((line, i) => {
-    const y = TEXT_PADDING + i * LINE_HEIGHT;
-    ctx.strokeText(line, canvas.width / 2, y);
-    ctx.fillText(line, canvas.width / 2, y);
-  });
+  ctx.fillStyle = '#000000';
+  lines.forEach((line, i) => ctx.fillText(line, canvas.width / 2, TEXT_PADDING + i * LINE_HEIGHT));
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
-  const width = AREA_WIDTH - AREA_PADDING * 2;
+  const width = Math.min(TEXT_WIDTH, AREA_WIDTH - AREA_PADDING * 2);
   const height = width * (canvas.height / canvas.width);
   const mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(width, height),

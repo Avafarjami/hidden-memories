@@ -161,5 +161,5 @@ els.input.addEventListener('keydown', (e) => {
 // `?debug` exposes the scene for manual testing and screenshots from the console.
 if (new URLSearchParams(location.search).has('debug')) window.hiddenMemories = { view };
 
-if (!API_BASE) console.info('API_BASE is empty: messages stay in this browser. Set it in src/config.js to share them.');
+console.info(`Shared messages API: ${API_BASE || location.origin}/api/memories (falls back to this browser if unreachable)`);
 detect();
