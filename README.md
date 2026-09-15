@@ -46,7 +46,7 @@ Then open http://localhost:8080. Note: camera and motion sensors need HTTPS or l
 
 ## Deploying
 
-GitHub Pages serves the main branch; push and it is live within a minute.
+The app is served from the portfolio server at https://avafarjami.com/hidden-memories/ . Its files live in `static/hidden-memories/` of the art-portfolio repository and deploy with that site (`git pull && docker compose up -d --build` on the server). This repository is the development copy; after changing something here, copy `index.html`, `style.css`, `manifest.webmanifest`, `src/` and `icons/` over and deploy the portfolio. The old GitHub Pages copy at avafarjami.github.io/hidden-memories is no longer maintained.
 
 ## Known limitations
 
