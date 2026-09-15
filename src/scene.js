@@ -13,7 +13,7 @@ import * as THREE from 'three';
 // viewer, length runs away from them. Make AREA_LENGTH 2 or 3 for a strip
 // people have to walk along to read.
 export const AREA_WIDTH = 1.0;
-export const AREA_LENGTH = 1.0;
+export const AREA_LENGTH = 2.0;
 const AREA_PADDING = 0.02;
 const MESSAGE_GAP = 0.012;
 
