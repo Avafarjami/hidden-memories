@@ -13,6 +13,23 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Memories">
   <link rel="stylesheet" href="style.css">
+
+  <!--
+    Variant Launch gives Safari on iPhone/iPad real WebXR AR (true position
+    tracking via an App Clip), which iOS otherwise has none of — see
+    "Real AR tracking on iPhone" in README.md. OFF by default: the app
+    works exactly as it does now, with the camera-only fallback on iOS,
+    until this is turned on. To turn it on:
+      1. Sign up free at https://launch.variant3d.com/ and create a project.
+      2. In the Launch Admin dashboard, authorise the domain this app is
+         served from — the whole domain (e.g. avafarjami.com), not just
+         the /hidden-memories path.
+      3. Copy the SDK key from the dashboard, paste it below in place of
+         YOUR_SDK_KEY, and delete the two comment markers around the tag.
+    This script must load before src/app.js checks for WebXR support, so
+    it has to stay here, near the top of <head>, not moved lower.
+  -->
+  <!-- <script src="https://launchar.app/sdk/v1?key=YOUR_SDK_KEY&redirect=true"></script> -->
 </head>
 <body>
 

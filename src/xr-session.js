@@ -16,6 +16,20 @@ export async function isXrAvailable() {
 }
 
 /**
+ * Prefers 'local-floor' (origin already at floor height) but falls back to
+ * plain 'local', which every runtime that grants a session supports. Hit
+ * testing works fine either way: the hit-test pose comes back in whichever
+ * space is passed to getPose, floor height and all.
+ */
+async function requestLocalSpace(session) {
+  try {
+    return await session.requestReferenceSpace('local-floor');
+  } catch {
+    return await session.requestReferenceSpace('local');
+  }
+}
+
+/**
  * @param {object} opts
  * @param {import('./scene.js')} opts.view      result of createScene()
  * @param {HTMLElement} opts.overlayRoot        DOM overlay root
@@ -26,16 +40,21 @@ export async function isXrAvailable() {
 export async function startXr({ view, overlayRoot, uiElements, onPlace, onEnd }) {
   const { renderer, scene, camera, reticle, area, orientArea } = view;
 
+  // 'local' is requested (not just 'local-floor') because a required
+  // reference-space feature the runtime doesn't support fails the whole
+  // session request, with no chance to fall back afterwards — and not
+  // every WebXR runtime offers 'local-floor' (notably Variant Launch's
+  // iOS viewer, see README). 'local' is the one every runtime guarantees.
   const session = await navigator.xr.requestSession('immersive-ar', {
-    requiredFeatures: ['hit-test', 'local-floor'],
-    optionalFeatures: ['anchors', 'dom-overlay'],
+    requiredFeatures: ['hit-test', 'local'],
+    optionalFeatures: ['anchors', 'dom-overlay', 'local-floor'],
     domOverlay: { root: overlayRoot }
   });
 
   renderer.xr.setReferenceSpaceType('local-floor');
   await renderer.xr.setSession(session);
 
-  const localSpace = await session.requestReferenceSpace('local-floor');
+  const localSpace = await requestLocalSpace(session);
   const viewerSpace = await session.requestReferenceSpace('viewer');
   const hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
 
